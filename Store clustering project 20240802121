@@ -1,0 +1,237 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score, davies_bouldin_score
+from sklearn.decomposition import PCA
+
+import warnings
+warnings.filterwarnings('ignore')
+
+# ----------------------------------------------------------
+# 1. DATA COLLECTION
+# ----------------------------------------------------------
+print("=" * 60)
+print("STEP 1: DATA COLLECTION")
+print("=" * 60)
+
+# Load dataset (make sure file is in same folder)
+df = pd.read_csv(r'C:\Users\varun\OneDrive\Documents\Stores.csv')
+
+# FIX: Clean column names
+df.columns = df.columns.str.strip().str.replace(' ', '_')
+
+print("Dataset loaded successfully.")
+print(f"Shape: {df.shape[0]} rows x {df.shape[1]} columns")
+
+print("\nColumns:")
+print(df.columns)
+
+print("\nFirst 5 rows:")
+print(df.head())
+
+# ----------------------------------------------------------
+# 2. DATA PREPROCESSING
+# ----------------------------------------------------------
+print("\n" + "=" * 60)
+print("STEP 2: DATA PREPROCESSING")
+print("=" * 60)
+
+# Missing values
+print("\nMissing Values:")
+print(df.isnull().sum())
+
+# Drop missing if any
+df = df.dropna()
+
+# Duplicates
+print("\nDuplicate rows:", df.duplicated().sum())
+
+# Summary
+print("\nStatistical Summary:")
+print(df.describe().round(2))
+
+# Features for clustering
+features = ['Store_Area', 'Items_Available',
+            'Daily_Customer_Count', 'Store_Sales']
+
+X = df[features].copy()
+
+# Scaling
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# ----------------------------------------------------------
+# 3. DATA WAREHOUSE DESIGN
+# ----------------------------------------------------------
+print("\n" + "=" * 60)
+print("STEP 3: DATA WAREHOUSE DESIGN")
+print("=" * 60)
+
+# Fact Table
+fact_table = df[['Store_ID', 'Store_Area', 'Items_Available',
+                 'Daily_Customer_Count', 'Store_Sales']].copy()
+
+# FIX: avoid divide by zero
+fact_table['Sales_per_Customer'] = (
+    fact_table['Store_Sales'] /
+    fact_table['Daily_Customer_Count'].replace(0, np.nan)
+).round(2)
+
+fact_table['Sales_per_SqFt'] = (
+    fact_table['Store_Sales'] /
+    fact_table['Store_Area'].replace(0, np.nan)
+).round(2)
+
+# Dimension Table
+def size_category(area):
+    if area < 1300:
+        return 'Small'
+    elif area < 1700:
+        return 'Medium'
+    else:
+        return 'Large'
+
+dim_store = pd.DataFrame({
+    'Store_ID': df['Store_ID'],
+    'Size_Category': df['Store_Area'].apply(size_category)
+})
+
+print("Fact Table Sample:")
+print(fact_table.head())
+
+# ----------------------------------------------------------
+# 4. K-MEANS CLUSTERING
+# ----------------------------------------------------------
+print("\n" + "=" * 60)
+print("STEP 4: CLUSTERING")
+print("=" * 60)
+
+inertias = []
+K_range = range(2, 11)
+
+for k in K_range:
+    km = KMeans(n_clusters=k, random_state=42, n_init='auto')
+    km.fit(X_scaled)
+    inertias.append(km.inertia_)
+
+# Silhouette
+sil_scores = []
+for k in K_range:
+    km = KMeans(n_clusters=k, random_state=42, n_init='auto')
+    labels = km.fit_predict(X_scaled)
+    sil_scores.append(silhouette_score(X_scaled, labels))
+
+# Choose best K
+optimal_k = 3
+print("Optimal K =", optimal_k)
+
+# Final model
+kmeans = KMeans(n_clusters=optimal_k, random_state=42, n_init='auto')
+df['Cluster'] = kmeans.fit_predict(X_scaled)
+
+print("\nCluster Distribution:")
+print(df['Cluster'].value_counts())
+
+# ----------------------------------------------------------
+# 5. EVALUATION
+# ----------------------------------------------------------
+print("\n" + "=" * 60)
+print("STEP 5: EVALUATION")
+print("=" * 60)
+
+sil = silhouette_score(X_scaled, df['Cluster'])
+db = davies_bouldin_score(X_scaled, df['Cluster'])
+
+print(f"Silhouette Score: {sil:.4f}")
+print(f"Davies-Bouldin Score: {db:.4f}")
+
+# Label clusters
+sorted_clusters = df.groupby('Cluster')['Store_Sales'].mean().sort_values()
+
+labels = ['Low Performance', 'Mid Performance', 'High Performance']
+label_map = {}
+
+for i, cluster_id in enumerate(sorted_clusters.index):
+    label_map[cluster_id] = labels[i]
+
+df['Cluster_Label'] = df['Cluster'].map(label_map)
+
+# ----------------------------------------------------------
+# 6. VISUALIZATION
+# ----------------------------------------------------------
+print("\n" + "=" * 60)
+print("STEP 6: VISUALIZATION")
+print("=" * 60)
+
+palette = {
+    'Low Performance': '#2196F3',
+    'Mid Performance': '#FF9800',
+    'High Performance': '#4CAF50'
+}
+
+# Elbow Plot
+plt.figure()
+plt.plot(list(K_range), inertias, marker='o')
+plt.title('Elbow Method')
+plt.xlabel('K')
+plt.ylabel('Inertia')
+plt.savefig('elbow.png')
+plt.close()
+
+# Scatter plot
+plt.figure()
+for label in labels:
+    subset = df[df['Cluster_Label'] == label]
+    plt.scatter(subset['Store_Area'], subset['Store_Sales'], label=label)
+
+plt.legend()
+plt.xlabel('Store Area')
+plt.ylabel('Sales')
+plt.savefig('scatter.png')
+plt.close()
+
+# PCA
+pca = PCA(n_components=2)
+X_pca = pca.fit_transform(X_scaled)
+
+plt.figure()
+for label in labels:
+    idx = df['Cluster_Label'] == label
+    plt.scatter(X_pca[idx, 0], X_pca[idx, 1], label=label)
+
+plt.legend()
+plt.savefig('pca.png')
+plt.close()
+
+# Boxplot FIXED
+plt.figure()
+sns.boxplot(data=df, x='Cluster_Label', y='Store_Sales',
+            hue='Cluster_Label', palette=palette, legend=False)
+plt.savefig('boxplot.png')
+plt.close()
+
+print("All plots saved!")
+
+# ----------------------------------------------------------
+# 7. CONCLUSION
+# ----------------------------------------------------------
+print("\n" + "=" * 60)
+print("STEP 7: CONCLUSION")
+print("=" * 60)
+
+print(f"""
+K-Means clustering successfully divided stores into 3 groups:
+
+• Low Performance
+• Mid Performance
+• High Performance
+
+Silhouette Score: {sil:.4f}
+Davies-Bouldin Score: {db:.4f}
+
+Project completed successfully!
+""")
