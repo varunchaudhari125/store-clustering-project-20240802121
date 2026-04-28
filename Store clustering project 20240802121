@@ -162,7 +162,6 @@ df['Cluster_Label'] = df['Cluster'].map(label_map)
 
 # ----------------------------------------------------------
 # 6. VISUALIZATION
-# ----------------------------------------------------------
 print("\n" + "=" * 60)
 print("STEP 6: VISUALIZATION")
 print("=" * 60)
@@ -173,48 +172,73 @@ palette = {
     'High Performance': '#4CAF50'
 }
 
-# Elbow Plot
+# -------------------------------
+# 1. ELBOW PLOT
+# -------------------------------
 plt.figure()
 plt.plot(list(K_range), inertias, marker='o')
 plt.title('Elbow Method')
 plt.xlabel('K')
 plt.ylabel('Inertia')
-plt.savefig('elbow.png')
-plt.close()
 
-# Scatter plot
+plt.savefig('elbow.png')   # save
+plt.show()                 # 👈 SHOW graph
+
+# -------------------------------
+# 2. SCATTER PLOT
+# -------------------------------
 plt.figure()
-for label in labels:
+
+for label in df['Cluster_Label'].unique():   # ✅ FIXED
     subset = df[df['Cluster_Label'] == label]
     plt.scatter(subset['Store_Area'], subset['Store_Sales'], label=label)
 
 plt.legend()
 plt.xlabel('Store Area')
 plt.ylabel('Sales')
-plt.savefig('scatter.png')
-plt.close()
 
-# PCA
+plt.savefig('scatter.png')
+plt.show()
+
+# -------------------------------
+# 3. PCA PLOT
+# -------------------------------
 pca = PCA(n_components=2)
 X_pca = pca.fit_transform(X_scaled)
 
 plt.figure()
-for label in labels:
+
+for label in df['Cluster_Label'].unique():   # ✅ FIXED
     idx = df['Cluster_Label'] == label
     plt.scatter(X_pca[idx, 0], X_pca[idx, 1], label=label)
 
 plt.legend()
+plt.title("PCA Clusters")
+
 plt.savefig('pca.png')
-plt.close()
+plt.show()
 
-# Boxplot FIXED
+# -------------------------------
+# 4. BOXPLOT
+# -------------------------------
 plt.figure()
-sns.boxplot(data=df, x='Cluster_Label', y='Store_Sales',
-            hue='Cluster_Label', palette=palette, legend=False)
-plt.savefig('boxplot.png')
-plt.close()
 
-print("All plots saved!")
+sns.boxplot(
+    data=df,
+    x='Cluster_Label',
+    y='Store_Sales',
+    hue='Cluster_Label',
+    palette=palette,
+    legend=False
+)
+
+plt.title("Sales Distribution by Cluster")
+
+plt.savefig('boxplot.png')
+plt.show()
+
+print("✅ All plots saved AND displayed!")
+
 
 # ----------------------------------------------------------
 # 7. CONCLUSION
